@@ -30,7 +30,7 @@ def process_msg(msg,t):
             for i in range(len(events)):
                 time = events[i].ts.secs + events[i].ts.nsecs*1e-9
                 result[i] = np.array([events[i].x,events[i].y,time,events[i].polarity])
-#
+
         elif rostype == 'uint8[]':
             pass
 
@@ -51,7 +51,6 @@ def bag2hdf5(fname,out_fname,topics=None):
         with h5py.File(out_fname, mode='w') as out_f:
             for topic, msg, t in bag.read_messages(topics=topics):
                 # update progressbar
-                #print("\nmsg {0}".format(msg))
                 pbar.update(bag._file.tell())
 
                 # convert it to numpy element (and dtype)
@@ -212,6 +211,19 @@ def bag2hdf5(fname,out_fname,topics=None):
                         assert dset.compression == 'gzip'
                         assert dset.compression_opts == 9
                         dsets[object] = dset
+            
+            if 'events' in dsets and 'image_raw_ts'in dsets:
+                event_ids_object = 'image_raw_event_inds'
+                event_ids = closest_event_to_image(dsets['events'],dsets['image_raw_ts'])
+                print('\nA',event_ids.shape)
+                if event_ids_object not in dsets:
+                    dset = out_f.create_dataset(namespace+'/'+event_ids_object, data=event_ids,
+                                                maxshape=(None,1),
+                                                compression='gzip',
+                                                compression_opts=9)
+                    assert dset.compression == 'gzip'
+                    assert dset.compression_opts == 9
+                    dsets[event_ids_object] = dset
                     
     except:
         if os.path.exists(out_fname):
@@ -238,6 +250,18 @@ def h5append(dset,arr):
     n_new_rows = len(arr) + n_old_rows
     dset.resize(n_new_rows, axis=0)
     dset[n_old_rows:] = arr
+
+def closest_event_to_image(dset_events,dset_img_timestamps):
+    """Associates the images to the closest event that was generated in time. The
+    association is based on the timestamp of the image and the event's timestamps"""
+    closest_event_ids = np.zeros((dset_img_timestamps.shape[0],1))
+
+    for i in range(dset_img_timestamps.shape[0]):
+        distance = abs(dset_events[:,2]-dset_img_timestamps[i])
+        ids = np.argmin(distance)
+        closest_event_ids[i] = ids
+    
+    return closest_event_ids
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Converts event data from rosbag file to hdf5 format')
