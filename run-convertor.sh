@@ -7,4 +7,4 @@ image_topic=/dvs/image_raw
 
 source $dvs_msg_path/devel/setup.bash
 
-python ./events-bag2hdf5.py $ros_bag_path/$ros_bag_file --topic $event_topic 
+python ./events-bag2hdf5.py $ros_bag_path/$ros_bag_file --topic $image_topic $event_topic

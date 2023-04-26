@@ -11,15 +11,17 @@ roslib.load_manifest('rosbag')
 import rosbag
 import progressbar
 
+import cv2
+from cv_bridge import CvBridge
+
 # import the messages of DVS sensor
 from dvs_msgs.msg import Event, EventArray
 from sensor_msgs.msg import Image
 
-def flatten_msg(msg,t):
-    result = []
+def process_msg(msg,t):
     for i, attr in enumerate(msg.__slots__):
         rostype = msg._slot_types[i]
-        #print(rostype)
+        #print("\n",rostype," ",i," ",attr,"\n")
 
         if rostype == 'dvs_msgs/Event[]':
             events = getattr(msg, attr)
@@ -28,17 +30,9 @@ def flatten_msg(msg,t):
             for i in range(len(events)):
                 time = events[i].ts.secs + events[i].ts.nsecs*1e-9
                 result[i] = np.array([events[i].x,events[i].y,time,events[i].polarity])
-
-            #for i in range(len(events)):
-            #    time = events[i].ts.secs + events[i].ts.nsecs*1e-9
-            #    result.extend([events[i].x,events[i].y,time,events[i].polarity])
-            #    try:
-            #        input("Press enter to continue")
-            #    except SyntaxError:
-            #        pass
 #
-        elif rostype == 'sensor_msgs/Image':
-            print('lol')
+        elif rostype == 'uint8[]':
+            pass
 
     return result
 
@@ -59,11 +53,11 @@ def bag2hdf5(fname,out_fname,topics=None):
                 # update progressbar
                 #print("\nmsg {0}".format(msg))
                 pbar.update(bag._file.tell())
-                # get the data
-                this_row = flatten_msg(msg, t)
 
                 # convert it to numpy element (and dtype)
                 if topic == '/dvs/events':
+                     # get the event data
+                    this_row = process_msg(msg, t)
                     object = 'events'
                     if object not in results2['davis']['left']:
                         try:
@@ -78,6 +72,30 @@ def bag2hdf5(fname,out_fname,topics=None):
                         results2['davis']['left'][object] = this_row
                     else:
                         results2['davis']['left'][object] = np.append(results2['davis']['left'][object], this_row, axis=0)
+
+                elif topic == '/dvs/image_raw':
+                    object = 'image_raw'
+                    # convert the img msg to numpy array
+                    bridge = CvBridge()
+                    img = bridge.imgmsg_to_cv2(msg,'mono8')
+                    img_3d = np.copy(img)
+                    img_3d = img_3d[np.newaxis,:,:] # puts the image in a 3 dimensional array for indexing individual images later
+
+                    #this_row = process_msg(msg, t)
+                    if object not in results2['davis']['left']:
+                        try:
+                            dtype = np.ndarray
+                        except:
+                            print >> sys.stderr, "*********************"
+                            print >> sys.stderr, 'topic:', topic
+                            print >> sys.stderr, '\nerror while processing message:\n\n%r' % msg
+                            print >> sys.stderr, '\nROW:', img_3d
+                            print >> sys.stderr, "*********************"
+                            raise                            
+                        results2['davis']['left'][object] = img_3d
+                    else:
+                        results2['davis']['left'][object] = np.append(results2['davis']['left'][object], img_3d, axis=0)
+
                 
                 # flush the caches periodically
                 if len(results2['davis']['left'][object]) >= chunksize:
@@ -92,15 +110,16 @@ def bag2hdf5(fname,out_fname,topics=None):
                         dsets[object] = dset
                     else:
                         # append to existing dataset
-                        #print("A",out_f['davis'].keys())
-                        #try:
-                        #    input("Press enter to continue")
-                        #except SyntaxError:
-                        #    pass
                         h5append(dsets[object],results2['davis']['left'][object])
                     # clear the cache values
                     if object is 'events':
                         results2['davis']['left'][object] = np.empty((0,4))
+                    if object is 'image_raw':
+                        # getting image dimensions from the msg data
+                        height = getattr(msg, 'height')
+                        width = getattr(msg, 'width') 
+                        # cleaning img cache
+                        results2['davis']['left'][object] = np.empty((0,height,width))
                     else:
                         pass
             
@@ -112,7 +131,6 @@ def bag2hdf5(fname,out_fname,topics=None):
                 if object in dsets:
                     h5append(dsets[object], results2['davis']['left'][object])
                 else:
-                    print("\nE\n")
                     out_f.create_dataset(namespace+'/'+object,
                                          data=results2['davis']['left'][object],
                                          compression='gzip',
