@@ -75,13 +75,23 @@ def bag2hdf5(fname,out_fname,topics=None):
 
                 elif topic == '/dvs/image_raw':
                     object = 'image_raw'
+                    object2 = 'image_raw_ts'
+
+                    # getting image dimensions from the msg data
+                    height = getattr(msg, 'height')
+                    width = getattr(msg, 'width')
+
                     # convert the img msg to numpy array
                     bridge = CvBridge()
                     img = bridge.imgmsg_to_cv2(msg,'mono8')
                     img_3d = np.copy(img)
                     img_3d = img_3d[np.newaxis,:,:] # puts the image in a 3 dimensional array for indexing individual images later
 
-                    #this_row = process_msg(msg, t)
+                    # Getting timestamp data
+                    t = getattr(msg, 'header').stamp
+                    time = np.array([t.secs + t.nsecs*1e-9])
+
+                    # Saving img data
                     if object not in results2['davis']['left']:
                         try:
                             dtype = np.ndarray
@@ -95,31 +105,67 @@ def bag2hdf5(fname,out_fname,topics=None):
                         results2['davis']['left'][object] = img_3d
                     else:
                         results2['davis']['left'][object] = np.append(results2['davis']['left'][object], img_3d, axis=0)
-
+                    
+                    # Saving img timestamp data
+                    if object2 not in results2['davis']['left']:
+                        try:
+                            dtype = np.ndarray
+                        except:
+                            print >> sys.stderr, "*********************"
+                            print >> sys.stderr, 'topic:', topic
+                            print >> sys.stderr, '\nerror while processing message:\n\n%r' % msg
+                            print >> sys.stderr, '\nROW:', time
+                            print >> sys.stderr, "*********************"
+                            raise                            
+                        results2['davis']['left'][object2] = time
+                    else:
+                        results2['davis']['left'][object2] = np.append(results2['davis']['left'][object2], time)
                 
                 # flush the caches periodically
                 if len(results2['davis']['left'][object]) >= chunksize:
                     if object not in dsets:
                         # initial creation
-                        dset = out_f.create_dataset(namespace+'/'+object, data=results2['davis']['left'][object],
-                                                    maxshape=(None,4),
-                                                    compression='gzip',
-                                                    compression_opts=9)
-                        assert dset.compression == 'gzip'
-                        assert dset.compression_opts == 9
-                        dsets[object] = dset
+                        if object is 'image_raw':
+                            # img dataset
+                            dset = out_f.create_dataset(namespace+'/'+object, data=results2['davis']['left'][object],
+                                                        maxshape=(None,height,width),
+                                                        compression='gzip',
+                                                        compression_opts=9)
+                            assert dset.compression == 'gzip'
+                            assert dset.compression_opts == 9
+                            dsets[object] = dset
+
+                            # timestamp dataset
+                            dset2 = out_f.create_dataset(namespace+'/'+object2, data=results2['davis']['left'][object2],
+                                                        maxshape=(None,),
+                                                        compression='gzip',
+                                                        compression_opts=9)
+                            assert dset.compression == 'gzip'
+                            assert dset.compression_opts == 9
+                            dsets[object2] = dset2
+                        elif object is 'events':
+                            dset = out_f.create_dataset(namespace+'/'+object, data=results2['davis']['left'][object],
+                                                        maxshape=(None,4),
+                                                        compression='gzip',
+                                                        compression_opts=9)
+                            assert dset.compression == 'gzip'
+                            assert dset.compression_opts == 9
+                            dsets[object] = dset
+                        
                     else:
                         # append to existing dataset
-                        h5append(dsets[object],results2['davis']['left'][object])
+                        if object is 'image_raw':
+                            h5append(dsets[object], results2['davis']['left'][object])
+                            h5append(dsets[object2], results2['davis']['left'][object2])
+                        elif object is 'events':
+                            h5append(dsets[object], results2['davis']['left'][object])
                     # clear the cache values
                     if object is 'events':
                         results2['davis']['left'][object] = np.empty((0,4))
                     if object is 'image_raw':
-                        # getting image dimensions from the msg data
-                        height = getattr(msg, 'height')
-                        width = getattr(msg, 'width') 
                         # cleaning img cache
                         results2['davis']['left'][object] = np.empty((0,height,width))
+                        results2['davis']['left'][object2] = np.empty((0,1))
                     else:
                         pass
             
@@ -129,12 +175,44 @@ def bag2hdf5(fname,out_fname,topics=None):
                     # no data
                     continue
                 if object in dsets:
-                    h5append(dsets[object], results2['davis']['left'][object])
+                    if object is 'image_raw':
+                        h5append(dsets[object], results2['davis']['left'][object])
+                        h5append(dsets[object2], results2['davis']['left'][object2])
+                    elif object is 'events':
+                        h5append(dsets[object], results2['davis']['left'][object])
                 else:
-                    out_f.create_dataset(namespace+'/'+object,
-                                         data=results2['davis']['left'][object],
-                                         compression='gzip',
-                                         compression_opts=9)
+                    if object is 'image_raw':
+                        # img dataset
+                        dset = out_f.create_dataset(namespace+'/'+object, data=results2['davis']['left'][object],
+                                                    maxshape=(None,height,width),
+                                                    compression='gzip',
+                                                    compression_opts=9)
+                        assert dset.compression == 'gzip'
+                        assert dset.compression_opts == 9
+                        dsets[object] = dset
+
+                        # timestamp dataset
+                        dset2 = out_f.create_dataset(namespace+'/'+object2, data=results2['davis']['left'][object2],
+                                                    maxshape=(None,),
+                                                    compression='gzip',
+                                                    compression_opts=9)
+                        assert dset.compression == 'gzip'
+                        assert dset.compression_opts == 9
+                        dsets[object2] = dset2
+                        #print '\nD',dsets['image_raw_ts'].shape
+                        #try:
+                        #    input("Press enter to continue")
+                        #except SyntaxError:
+                        #    pass
+                    elif object is 'events':
+                        dset = out_f.create_dataset(namespace+'/'+object, data=results2['davis']['left'][object],
+                                                    maxshape=(None,4),
+                                                    compression='gzip',
+                                                    compression_opts=9)
+                        assert dset.compression == 'gzip'
+                        assert dset.compression_opts == 9
+                        dsets[object] = dset
+                    
     except:
         if os.path.exists(out_fname):
             os.unlink(out_fname)
