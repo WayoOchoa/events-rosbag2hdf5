@@ -5,6 +5,7 @@ import sys
 import numpy as np
 import argparse
 import h5py
+import time
 
 import roslib
 roslib.load_manifest('rosbag')
@@ -28,8 +29,8 @@ def process_msg(msg,t):
             result = np.zeros((len(events),4))
             
             for i in range(len(events)):
-                time = events[i].ts.secs + events[i].ts.nsecs*1e-9
-                result[i] = np.array([events[i].x,events[i].y,time,events[i].polarity])
+                time_events = events[i].ts.secs + events[i].ts.nsecs*1e-9
+                result[i] = np.array([events[i].x,events[i].y,time_events,events[i].polarity])
 
         elif rostype == 'uint8[]':
             pass
@@ -88,7 +89,7 @@ def bag2hdf5(fname,out_fname,topics=None):
 
                     # Getting timestamp data
                     t = getattr(msg, 'header').stamp
-                    time = np.array([t.secs + t.nsecs*1e-9])
+                    time_data = np.array([t.secs + t.nsecs*1e-9])
 
                     # Saving img data
                     if object not in results2['davis']['left']:
@@ -113,12 +114,12 @@ def bag2hdf5(fname,out_fname,topics=None):
                             print >> sys.stderr, "*********************"
                             print >> sys.stderr, 'topic:', topic
                             print >> sys.stderr, '\nerror while processing message:\n\n%r' % msg
-                            print >> sys.stderr, '\nROW:', time
+                            print >> sys.stderr, '\nROW:', time_data
                             print >> sys.stderr, "*********************"
                             raise                            
-                        results2['davis']['left'][object2] = time
+                        results2['davis']['left'][object2] = time_data
                     else:
-                        results2['davis']['left'][object2] = np.append(results2['davis']['left'][object2], time)
+                        results2['davis']['left'][object2] = np.append(results2['davis']['left'][object2], time_data)
                 
                 # flush the caches periodically
                 if len(results2['davis']['left'][object]) >= chunksize:
@@ -215,11 +216,10 @@ def bag2hdf5(fname,out_fname,topics=None):
             if 'events' in dsets and 'image_raw_ts'in dsets:
                 event_ids_object = 'image_raw_event_inds'
                 event_ids = closest_event_to_image(dsets['events'],dsets['image_raw_ts'])
-                print('\nA',event_ids.shape)
                 if event_ids_object not in dsets:
                     dset = out_f.create_dataset(namespace+'/'+event_ids_object, data=event_ids,
                                                 maxshape=(None,1),
-                                                compression='gzip',
+                                                compression='gzip', dtype='int',
                                                 compression_opts=9)
                     assert dset.compression == 'gzip'
                     assert dset.compression_opts == 9
@@ -259,7 +259,7 @@ def closest_event_to_image(dset_events,dset_img_timestamps):
     for i in range(dset_img_timestamps.shape[0]):
         distance = abs(dset_events[:,2]-dset_img_timestamps[i])
         ids = np.argmin(distance)
-        closest_event_ids[i] = ids
+        closest_event_ids[i] = int(ids)
     
     return closest_event_ids
 

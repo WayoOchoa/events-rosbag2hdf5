@@ -1,7 +1,7 @@
 #!/bin/bash
 dvs_msg_path=~/catkin_ws
-ros_bag_path=/home/eduardo/Documents/ros-bags/Cirs/EBC/Sant-Feliu_MarineSnowTesting_14042023
-ros_bag_file=session1_space-surface_marine-snow-open_14042023-test4.bag
+ros_bag_path=/home/eduardo/Documents/ros-bags/Cirs/EBC/marine-snow-Banyoles/11052023/bg_only-tests
+ros_bag_file=2023-05-11-19-17-34.bag
 event_topic=/dvs/events 
 image_topic=/dvs/image_raw
 
